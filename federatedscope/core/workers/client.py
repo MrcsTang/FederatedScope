@@ -12,6 +12,9 @@ from federatedscope.core.secret_sharing import AdditiveSecretSharing
 from federatedscope.core.auxiliaries.utils import merge_dict_of_results, \
     calculate_time_cost
 from federatedscope.core.workers.base_client import BaseClient
+from federatedscope.contrib.governance.fs_integration import (
+    unpack_model_para_with_governance,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -299,6 +302,8 @@ class Client(BaseClient):
             sender = message.sender
             timestamp = message.timestamp
             content = message.content
+            content, governance_payload = unpack_model_para_with_governance(
+                content)
 
             # dequantization
             if self._cfg.quantization.method == 'uniform':
@@ -342,7 +347,27 @@ class Client(BaseClient):
                         f"early stopped. "
                         f"The next FL update may result in negative effect")
                     self._monitor.local_converged()
-                sample_size, model_para_all, results = self.trainer.train()
+                governance_steps = None
+                if governance_payload is not None:
+                    governance_steps = governance_payload.get(
+                        'local_update_steps', None)
+                original_steps = self._cfg.train.local_update_steps
+                if governance_steps is not None:
+                    if int(governance_steps) != int(original_steps):
+                        logger.info(
+                            "Client #{} applies governance "
+                            "local_update_steps: {} -> {}".format(
+                                self.ID,
+                                original_steps,
+                                int(governance_steps),
+                            )
+                        )
+                    self._set_local_update_steps(governance_steps)
+                try:
+                    sample_size, model_para_all, results = self.trainer.train()
+                finally:
+                    if governance_steps is not None:
+                        self._set_local_update_steps(original_steps)
                 if self._cfg.federate.share_local_model and not \
                         self._cfg.federate.online_aggr:
                     model_para_all = copy.deepcopy(model_para_all)
@@ -436,6 +461,14 @@ class Client(BaseClient):
                                 init_timestamp=timestamp,
                                 instance_number=sample_size),
                             content=(sample_size, shared_model_para)))
+
+    def _set_local_update_steps(self, local_update_steps):
+        was_frozen = self._cfg.is_frozen()
+        if was_frozen:
+            self._cfg.defrost()
+        self._cfg.train.local_update_steps = int(local_update_steps)
+        if was_frozen:
+            self._cfg.freeze(inform=False, save=False, check_cfg=False)
 
     def callback_funcs_for_assign_id(self, message: Message):
         """

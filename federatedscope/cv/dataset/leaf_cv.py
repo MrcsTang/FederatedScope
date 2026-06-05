@@ -19,6 +19,13 @@ IMAGE_SIZE = {'femnist': (28, 28), 'celeba': (84, 84, 3)}
 MODE = {'femnist': 'L', 'celeba': 'RGB'}
 
 
+def _load_tensor_file(path):
+    try:
+        return torch.load(path, weights_only=True)
+    except TypeError:
+        return torch.load(path)
+
+
 class LEAF_CV(LEAF):
     """
     LEAF CV dataset from "LEAF: A Benchmark for Federated Settings"
@@ -59,16 +66,16 @@ class LEAF_CV(LEAF):
             files.sort(key=lambda k: int(k[5:]))
 
             for file in files:
-                train_data, train_targets = torch.load(
+                train_data, train_targets = _load_tensor_file(
                     osp.join(self.processed_dir, file, 'train.pt'))
-                test_data, test_targets = torch.load(
+                test_data, test_targets = _load_tensor_file(
                     osp.join(self.processed_dir, file, 'test.pt'))
                 self.data_dict[int(file[5:])] = {
                     'train': (train_data, train_targets),
                     'test': (test_data, test_targets)
                 }
                 if osp.exists(osp.join(self.processed_dir, file, 'val.pt')):
-                    val_data, val_targets = torch.load(
+                    val_data, val_targets = _load_tensor_file(
                         osp.join(self.processed_dir, file, 'val.pt'))
                     self.data_dict[int(file[5:])]['val'] = (val_data,
                                                             val_targets)

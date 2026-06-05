@@ -30,6 +30,7 @@ class GovernanceConfig:
     max_effort: int = 5
     effort_eta: float = 1.0
     effort_cost_weight: float = 0.2
+    odrc_exit_compensation_effort_weight: float = 0.0
 
     def __post_init__(self):
         if self.mechanism not in MECHANISMS:
@@ -40,6 +41,10 @@ class GovernanceConfig:
             )
         if self.min_effort > self.max_effort:
             raise ValueError("min_effort cannot exceed max_effort")
+        if self.odrc_exit_compensation_effort_weight < 0:
+            raise ValueError(
+                "odrc_exit_compensation_effort_weight cannot be negative"
+            )
 
 
 @dataclass
@@ -71,6 +76,13 @@ class RoundRecord:
     exit_compensation: float
     credit: float
     relationship_score: float
+    realized_reward: float
+    outside_option: float
+    cost_penalty: float
+    raw_effort: float
+    rounded_effort: int
+    clipped_by_lower: bool
+    clipped_by_upper: bool
     active: bool
 
 
@@ -87,7 +99,7 @@ class GovernanceStateManager:
 
     def step(self, round_id, client_signals):
         from federatedscope.contrib.governance.effort_scheduler import (
-            update_effort,
+            diagnose_effort_update,
         )
         from federatedscope.contrib.governance.mechanism_rules import (
             apply_mechanism,
@@ -107,7 +119,8 @@ class GovernanceStateManager:
                 self.cfg.delta * state.relationship_score +
                 decision.payment_deferred
             )
-            effort_after = update_effort(state, decision, self.cfg)
+            effort_diag = diagnose_effort_update(state, decision, self.cfg)
+            effort_after = effort_diag.clipped_effort
 
             state.effort = effort_after
             state.last_signal = signal
@@ -127,6 +140,13 @@ class GovernanceStateManager:
                 exit_compensation=decision.exit_compensation,
                 credit=state.credit,
                 relationship_score=state.relationship_score,
+                realized_reward=effort_diag.realized_reward,
+                outside_option=effort_diag.outside_option,
+                cost_penalty=effort_diag.cost_penalty,
+                raw_effort=effort_diag.raw_effort,
+                rounded_effort=effort_diag.rounded_effort,
+                clipped_by_lower=effort_diag.clipped_by_lower,
+                clipped_by_upper=effort_diag.clipped_by_upper,
                 active=state.active,
             )
             self.records.append(record)

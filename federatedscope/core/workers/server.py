@@ -18,6 +18,13 @@ from federatedscope.core.auxiliaries.utils import merge_dict_of_results, \
 from federatedscope.core.auxiliaries.trainer_builder import get_trainer
 from federatedscope.core.secret_sharing import AdditiveSecretSharing
 from federatedscope.core.workers.base_server import BaseServer
+from federatedscope.contrib.governance.fs_integration import (
+    build_governance_manager,
+    export_governance_records,
+    is_governance_enabled,
+    metric_to_signal,
+    pack_model_para_with_governance,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -232,6 +239,8 @@ class Server(BaseServer):
 
         # inject noise before broadcast
         self._noise_injector = None
+        self.governance_manager = None
+        self._governance_eval_metrics = dict()
 
     @property
     def client_num(self):
@@ -423,6 +432,9 @@ class Server(BaseServer):
             self.save_best_results()
             if not self._cfg.federate.make_global_eval:
                 self.save_client_eval_results()
+            if is_governance_enabled(self._cfg):
+                export_governance_records(self.governance_manager,
+                                          self._cfg.outdir)
             self.terminate(msg_type='finish')
 
         # Clean the clients evaluation msg buffer
@@ -528,6 +540,7 @@ class Server(BaseServer):
                 self._monitor.use_wandb:
             self._monitor.merge_system_metrics_simulation_mode(
                 file_io=False, from_global_monitors=True)
+        self._update_governance_from_eval_results()
         self.check_and_save()
 
     def save_best_results(self):
@@ -633,6 +646,36 @@ class Server(BaseServer):
 
         return formatted_logs_all_set
 
+    def _update_governance_from_eval_results(self):
+        if not is_governance_enabled(self._cfg) or \
+                self.governance_manager is None:
+            return
+        if self._cfg.federate.make_global_eval:
+            return
+        if 'eval' not in self.msg_buffer or len(self.msg_buffer['eval']) == 0:
+            return
+
+        round = max(self.msg_buffer['eval'].keys())
+        eval_msg_buffer = self.msg_buffer['eval'][round]
+        client_signals = dict()
+        for client_id, current_metrics in eval_msg_buffer.items():
+            if current_metrics is None or \
+                    client_id not in self.governance_manager.client_states:
+                continue
+            previous_metrics = self._governance_eval_metrics.get(client_id)
+            client_signals[client_id] = metric_to_signal(
+                previous_metrics,
+                current_metrics,
+                self._cfg.governance.signal_metric,
+                self._cfg.governance.signal_scale,
+            )
+            self._governance_eval_metrics[client_id] = current_metrics
+
+        if client_signals:
+            self.governance_manager.step(round, client_signals)
+            export_governance_records(self.governance_manager,
+                                      self._cfg.outdir)
+
     def broadcast_model_para(self,
                              msg_type='model_para',
                              sample_client_num=-1,
@@ -696,6 +739,25 @@ class Server(BaseServer):
 
         # We define the evaluation happens at the end of an epoch
         rnd = self.state - 1 if msg_type == 'evaluate' else self.state
+
+        if is_governance_enabled(self._cfg) and msg_type == 'model_para':
+            for client_id in receiver:
+                governance_steps = \
+                    self.governance_manager.get_local_update_steps(client_id)
+                self.comm_manager.send(
+                    Message(msg_type=msg_type,
+                            sender=self.ID,
+                            receiver=[client_id],
+                            state=min(rnd, self.total_round_num),
+                            timestamp=self.cur_timestamp,
+                            content=pack_model_para_with_governance(
+                                model_para, governance_steps)))
+            if self._cfg.federate.online_aggr:
+                for idx in range(self.model_num):
+                    self.aggregators[idx].reset()
+            if filter_unseen_clients:
+                self.sampler.change_state(self.unseen_clients_id, 'seen')
+            return
 
         self.comm_manager.send(
             Message(msg_type=msg_type,
@@ -832,6 +894,14 @@ class Server(BaseServer):
             if self._cfg.asyn.use and self._cfg.asyn.aggregator == 'time_up':
                 self.deadline_for_cur_round = self.cur_timestamp + \
                                                self._cfg.asyn.time_budget
+
+            if is_governance_enabled(self._cfg):
+                if self._cfg.federate.process_num > 1:
+                    raise ValueError(
+                        "Governance integration currently supports "
+                        "standalone single-process runs only.")
+                self.governance_manager = build_governance_manager(
+                    self._cfg, range(1, self.client_num + 1))
 
             # start feature engineering
             self.trigger_for_feat_engr(

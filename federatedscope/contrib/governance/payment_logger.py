@@ -23,19 +23,44 @@ def summarize_records(records):
             "n_rounds": 0,
             "n_clients": 0,
             "avg_effort": 0.0,
+            "max_effort": 0,
+            "effort_gt_min_rate": 0.0,
             "avg_credit": 0.0,
             "avg_relationship_score": 0.0,
             "avg_payment_now": 0.0,
             "avg_payment_deferred": 0.0,
             "avg_exit_compensation": 0.0,
+            "total_payment_now": 0.0,
+            "total_payment_deferred": 0.0,
+            "total_exit_compensation": 0.0,
+            "total_governance_transfer": 0.0,
+            "avg_realized_reward": 0.0,
+            "avg_outside_option": 0.0,
+            "avg_cost_penalty": 0.0,
+            "avg_raw_effort": 0.0,
+            "lower_clip_rate": 0.0,
+            "upper_clip_rate": 0.0,
             "active_rate": 0.0,
         }
 
+    min_effort = min(record.effort_before for record in records)
+    total_payment_now = sum(record.payment_now for record in records)
+    total_payment_deferred = sum(
+        record.payment_deferred for record in records
+    )
+    total_exit_compensation = sum(
+        record.exit_compensation for record in records
+    )
     return {
         "mechanism": records[0].mechanism,
         "n_rounds": len({record.round_id for record in records}),
         "n_clients": len({record.client_id for record in records}),
         "avg_effort": _mean(record.effort_after for record in records),
+        "max_effort": max(record.effort_after for record in records),
+        "effort_gt_min_rate": _mean(
+            1.0 if record.effort_after > min_effort else 0.0
+            for record in records
+        ),
         "avg_credit": _mean(record.credit for record in records),
         "avg_relationship_score": _mean(
             record.relationship_score for record in records
@@ -46,6 +71,27 @@ def summarize_records(records):
         ),
         "avg_exit_compensation": _mean(
             record.exit_compensation for record in records
+        ),
+        "total_payment_now": total_payment_now,
+        "total_payment_deferred": total_payment_deferred,
+        "total_exit_compensation": total_exit_compensation,
+        "total_governance_transfer": (
+            total_payment_now + total_payment_deferred +
+            total_exit_compensation
+        ),
+        "avg_realized_reward": _mean(
+            record.realized_reward for record in records
+        ),
+        "avg_outside_option": _mean(
+            record.outside_option for record in records
+        ),
+        "avg_cost_penalty": _mean(record.cost_penalty for record in records),
+        "avg_raw_effort": _mean(record.raw_effort for record in records),
+        "lower_clip_rate": _mean(
+            1.0 if record.clipped_by_lower else 0.0 for record in records
+        ),
+        "upper_clip_rate": _mean(
+            1.0 if record.clipped_by_upper else 0.0 for record in records
         ),
         "active_rate": _mean(1.0 if record.active else 0.0
                              for record in records),
