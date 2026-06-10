@@ -104,6 +104,10 @@ def _read_records_summary(run_dir):
     total_exit_compensation = sum(
         _to_float(row.get("exit_compensation")) for row in records
     )
+    total_welfare = sum(_to_float(row.get("welfare")) for row in records)
+    total_net_welfare = sum(
+        _to_float(row.get("net_welfare")) for row in records
+    )
     n_records = len(records)
 
     return {
@@ -118,6 +122,23 @@ def _read_records_summary(run_dir):
         "avg_payment_now": total_payment_now / n_records,
         "avg_payment_deferred": total_payment_deferred / n_records,
         "avg_exit_compensation": total_exit_compensation / n_records,
+        "avg_participation_prob": sum(
+            _to_float(row.get("participation_prob"), default=1.0)
+            for row in records
+        ) / n_records,
+        "active_rate": sum(
+            1.0 if str(row.get("active", "")).lower() == "true" else 0.0
+            for row in records
+        ) / n_records,
+        "exit_rate": sum(
+            1.0 if str(row.get("exit_event", "")).lower() == "true"
+            else 0.0
+            for row in records
+        ) / n_records,
+        "avg_welfare": total_welfare / n_records,
+        "avg_net_welfare": total_net_welfare / n_records,
+        "total_welfare": total_welfare,
+        "total_net_welfare": total_net_welfare,
         "effort_distribution": _format_distribution(effort_dist),
         "final_round_effort_distribution": _format_distribution(
             final_effort_dist
@@ -206,6 +227,33 @@ def build_rows(exp_root, sub_exp_prefix=None):
             "avg_realized_reward": governance.get("avg_realized_reward", ""),
             "avg_outside_option": governance.get("avg_outside_option", ""),
             "avg_cost_penalty": governance.get("avg_cost_penalty", ""),
+            "active_rate": governance.get(
+                "active_rate", records.get("active_rate", "")
+            ),
+            "exit_rate": governance.get(
+                "exit_rate", records.get("exit_rate", "")
+            ),
+            "avg_participation_prob": governance.get(
+                "avg_participation_prob",
+                records.get("avg_participation_prob", ""),
+            ),
+            "avg_welfare": governance.get(
+                "avg_welfare", records.get("avg_welfare", "")
+            ),
+            "avg_net_welfare": governance.get(
+                "avg_net_welfare", records.get("avg_net_welfare", "")
+            ),
+            "total_welfare": governance.get(
+                "total_welfare", records.get("total_welfare", "")
+            ),
+            "total_net_welfare": governance.get(
+                "total_net_welfare", records.get("total_net_welfare", "")
+            ),
+            "group_summary": json.dumps(
+                governance.get("group_summary", {}),
+                sort_keys=True,
+                separators=(",", ":"),
+            ) if governance.get("group_summary") else "",
             "record_count": records.get("record_count", ""),
             "effort_distribution": records.get("effort_distribution", ""),
             "final_round_effort_distribution": records.get(

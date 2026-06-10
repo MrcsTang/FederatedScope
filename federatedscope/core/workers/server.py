@@ -341,6 +341,9 @@ class Server(BaseServer):
                 min_received_num = self._cfg.asyn.min_received_num
             else:
                 min_received_num = self._cfg.federate.sample_client_num
+        min_received_num = self._governance_min_received_num(
+            min_received_num, check_eval_result
+        )
         assert min_received_num <= self.sample_client_num
 
         if check_eval_result and self._cfg.federate.mode.lower(
@@ -390,6 +393,17 @@ class Server(BaseServer):
             move_on_flag = False
 
         return move_on_flag
+
+    def _governance_min_received_num(self, min_received_num,
+                                     check_eval_result):
+        if check_eval_result or not is_governance_enabled(self._cfg) or \
+                self.governance_manager is None:
+            return min_received_num
+
+        active_num = len(self.governance_manager.active_client_ids())
+        if active_num <= 0:
+            return min_received_num
+        return min(min_received_num, active_num)
 
     def check_and_save(self):
         """
@@ -695,12 +709,34 @@ class Server(BaseServer):
                 What Do We Mean by Generalization in Federated Learning?] \
                 You may want to set it to be False when in evaluation stage
         """
+        governance_inactive_clients = []
+        governance_sample_client_num = sample_client_num
+        if is_governance_enabled(self._cfg) and \
+                self.governance_manager is not None and \
+                msg_type == 'model_para' and filter_unseen_clients:
+            active_client_ids = set(self.governance_manager.active_client_ids())
+            if active_client_ids:
+                governance_inactive_clients = [
+                    client_id for client_id in range(1, self.client_num + 1)
+                    if client_id not in active_client_ids
+                ]
+                if governance_inactive_clients:
+                    self.sampler.change_state(governance_inactive_clients,
+                                              'unseen')
+                    if governance_sample_client_num > 0:
+                        governance_sample_client_num = min(
+                            governance_sample_client_num,
+                            len(active_client_ids),
+                        )
+
         if filter_unseen_clients:
             # to filter out the unseen clients when sampling
             self.sampler.change_state(self.unseen_clients_id, 'unseen')
 
-        if sample_client_num > 0:
-            receiver = self.sampler.sample(size=sample_client_num)
+        if governance_sample_client_num == 0:
+            receiver = []
+        elif governance_sample_client_num > 0:
+            receiver = self.sampler.sample(size=governance_sample_client_num)
         else:
             # broadcast to all clients
             receiver = list(self.comm_manager.neighbors.keys())
@@ -757,6 +793,8 @@ class Server(BaseServer):
                     self.aggregators[idx].reset()
             if filter_unseen_clients:
                 self.sampler.change_state(self.unseen_clients_id, 'seen')
+            if governance_inactive_clients:
+                self.sampler.change_state(governance_inactive_clients, 'seen')
             return
 
         self.comm_manager.send(
@@ -773,6 +811,8 @@ class Server(BaseServer):
         if filter_unseen_clients:
             # restore the state of the unseen clients within sampler
             self.sampler.change_state(self.unseen_clients_id, 'seen')
+        if governance_inactive_clients:
+            self.sampler.change_state(governance_inactive_clients, 'seen')
 
     def broadcast_client_address(self):
         """

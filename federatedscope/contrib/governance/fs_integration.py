@@ -1,6 +1,7 @@
 """FederatedScope integration helpers for governance simulation."""
 
 import os
+import random
 
 from federatedscope.contrib.governance.contribution_signal import (
     validation_gain_signal,
@@ -38,16 +39,73 @@ def build_governance_manager(cfg, client_ids):
         odrc_exit_compensation_effort_weight=(
             cfg.governance.odrc_exit_compensation_effort_weight
         ),
+        retention_enabled=cfg.governance.retention_enabled,
+        retention_eta=cfg.governance.retention_eta,
+        retention_cost_weight=cfg.governance.retention_cost_weight,
+        retention_risk_weight=cfg.governance.retention_risk_weight,
+        retention_protection_weight=(
+            cfg.governance.retention_protection_weight
+        ),
+        retention_relationship_weight=(
+            cfg.governance.retention_relationship_weight
+        ),
+        retention_exit_compensation_weight=(
+            cfg.governance.retention_exit_compensation_weight
+        ),
+        min_participation_prob=cfg.governance.min_participation_prob,
+        exit_threshold=cfg.governance.exit_threshold,
+        welfare_signal_weight=cfg.governance.welfare_signal_weight,
+        welfare_retention_weight=cfg.governance.welfare_retention_weight,
+        welfare_cost_weight=cfg.governance.welfare_cost_weight,
     )
-    client_states = [
-        ClientGovernanceState(
-            client_id=int(client_id),
-            gamma=cfg.governance.gamma,
-            cost_k=cfg.governance.cost_k,
-            effort=int(cfg.train.local_update_steps),
-        ) for client_id in client_ids
-    ]
+    client_states = _build_client_states(cfg, client_ids)
     return GovernanceStateManager(client_states=client_states, cfg=gov_cfg)
+
+
+def _build_client_states(cfg, client_ids):
+    rng = random.Random(int(cfg.governance.heterogeneity_seed))
+    sorted_client_ids = sorted(int(client_id) for client_id in client_ids)
+    states = []
+
+    for client_id in sorted_client_ids:
+        if cfg.governance.heterogeneity_enabled:
+            gamma = rng.uniform(
+                float(cfg.governance.gamma_low),
+                float(cfg.governance.gamma_high),
+            )
+            cost_k = rng.uniform(
+                float(cfg.governance.cost_k_low),
+                float(cfg.governance.cost_k_high),
+            )
+            client_group = _client_group(gamma, cost_k, cfg)
+        else:
+            gamma = float(cfg.governance.gamma)
+            cost_k = float(cfg.governance.cost_k)
+            client_group = "homogeneous"
+
+        states.append(
+            ClientGovernanceState(
+                client_id=client_id,
+                gamma=gamma,
+                cost_k=cost_k,
+                client_group=client_group,
+                effort=int(cfg.train.local_update_steps),
+            )
+        )
+
+    return states
+
+
+def _client_group(gamma, cost_k, cfg):
+    gamma_mid = (
+        float(cfg.governance.gamma_low) + float(cfg.governance.gamma_high)
+    ) / 2.0
+    cost_mid = (
+        float(cfg.governance.cost_k_low) + float(cfg.governance.cost_k_high)
+    ) / 2.0
+    gamma_label = "high_gamma" if gamma >= gamma_mid else "low_gamma"
+    cost_label = "high_cost" if cost_k >= cost_mid else "low_cost"
+    return "{}_{}".format(gamma_label, cost_label)
 
 
 def pack_model_para_with_governance(model_para, local_update_steps):

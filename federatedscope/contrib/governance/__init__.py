@@ -25,6 +25,11 @@ from federatedscope.contrib.governance.payment_logger import (
     write_records_csv,
     write_summary_json,
 )
+from federatedscope.contrib.governance.retention_welfare import (
+    clip_probability,
+    compute_welfare,
+    diagnose_retention_update,
+)
 
 __all__ = [
     "MECHANISMS",
@@ -35,7 +40,10 @@ __all__ = [
     "PaymentDecision",
     "RoundRecord",
     "apply_mechanism",
+    "clip_probability",
+    "compute_welfare",
     "diagnose_effort_update",
+    "diagnose_retention_update",
     "records_to_csv",
     "summarize_records",
     "update_effort",

@@ -41,6 +41,13 @@ def summarize_records(records):
             "lower_clip_rate": 0.0,
             "upper_clip_rate": 0.0,
             "active_rate": 0.0,
+            "exit_rate": 0.0,
+            "avg_participation_prob": 0.0,
+            "avg_welfare": 0.0,
+            "avg_net_welfare": 0.0,
+            "total_welfare": 0.0,
+            "total_net_welfare": 0.0,
+            "group_summary": {},
         }
 
     min_effort = min(record.effort_before for record in records)
@@ -51,7 +58,9 @@ def summarize_records(records):
     total_exit_compensation = sum(
         record.exit_compensation for record in records
     )
-    return {
+    total_welfare = sum(record.welfare for record in records)
+    total_net_welfare = sum(record.net_welfare for record in records)
+    summary = {
         "mechanism": records[0].mechanism,
         "n_rounds": len({record.round_id for record in records}),
         "n_clients": len({record.client_id for record in records}),
@@ -95,6 +104,49 @@ def summarize_records(records):
         ),
         "active_rate": _mean(1.0 if record.active else 0.0
                              for record in records),
+        "exit_rate": _mean(1.0 if record.exit_event else 0.0
+                           for record in records),
+        "avg_participation_prob": _mean(
+            record.participation_prob for record in records
+        ),
+        "avg_welfare": _mean(record.welfare for record in records),
+        "avg_net_welfare": _mean(record.net_welfare for record in records),
+        "total_welfare": total_welfare,
+        "total_net_welfare": total_net_welfare,
+        "group_summary": _summarize_groups(records),
+    }
+    return summary
+
+
+def _summarize_groups(records):
+    group_records = {}
+    for record in records:
+        group_records.setdefault(record.client_group, []).append(record)
+
+    return {
+        group: {
+            "n_clients": len({record.client_id for record in group_items}),
+            "active_rate": _mean(
+                1.0 if record.active else 0.0 for record in group_items
+            ),
+            "exit_rate": _mean(
+                1.0 if record.exit_event else 0.0
+                for record in group_items
+            ),
+            "avg_participation_prob": _mean(
+                record.participation_prob for record in group_items
+            ),
+            "avg_effort": _mean(
+                record.effort_after for record in group_items
+            ),
+            "avg_welfare": _mean(
+                record.welfare for record in group_items
+            ),
+            "avg_net_welfare": _mean(
+                record.net_welfare for record in group_items
+            ),
+        }
+        for group, group_items in sorted(group_records.items())
     }
 
 
