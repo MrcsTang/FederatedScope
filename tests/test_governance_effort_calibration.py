@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(
     os.path.dirname(__file__),
     "..",
@@ -84,6 +86,113 @@ def test_odrc_exit_compensation_effort_channel_can_change_effort():
     assert records[0].exit_compensation > 0
     assert records[0].effort_after > 1
     assert records[0].realized_reward > cfg.base_payment
+
+
+def test_triggered_budgeted_odrc_respects_formal_budget():
+    states = [
+        ClientGovernanceState(client_id=1, gamma=0.8, cost_k=1.2, effort=1),
+        ClientGovernanceState(client_id=2, gamma=0.8, cost_k=1.2, effort=1),
+    ]
+    cfg = GovernanceConfig(
+        mechanism="odrc_triggered",
+        retention_enabled=True,
+        rel_bonus_fraction=0.8,
+        exit_compensation=1.0,
+        safeguard_strength=1.0,
+        trigger_signal_threshold=0.45,
+        triggered_max_compensation=10.0,
+        formal_budget_cap=0.5,
+    )
+    manager = GovernanceStateManager(client_states=states, cfg=cfg)
+    records = manager.step(round_id=0, client_signals={1: 0.0, 2: 0.0})
+
+    assert sum(record.exit_compensation for record in records) <= 0.5
+    assert any(record.formal_triggered for record in records)
+    assert max(record.formal_budget_used for record in records) <= 0.5
+
+
+def test_triggered_odrc_defaults_to_shared_rel_bonus_fraction():
+    states = [
+        ClientGovernanceState(client_id=1, gamma=0.5, cost_k=1.0, effort=1),
+    ]
+    cfg = GovernanceConfig(
+        mechanism="odrc_triggered",
+        rel_bonus_fraction=0.8,
+        triggered_max_compensation=0.0,
+    )
+    manager = GovernanceStateManager(client_states=states, cfg=cfg)
+    records = manager.step(round_id=0, client_signals={1: 0.5})
+
+    assert cfg.odrc_triggered_rel_bonus_fraction == 0.8
+    assert records[0].payment_now == pytest.approx(0.08)
+    assert records[0].payment_deferred == pytest.approx(0.32)
+
+
+def test_triggered_odrc_rel_bonus_can_be_decoupled_from_continuous_odrc():
+    signal = 0.5
+    states = [
+        ClientGovernanceState(client_id=1, gamma=0.5, cost_k=1.0, effort=1),
+    ]
+    triggered_cfg = GovernanceConfig(
+        mechanism="odrc_triggered",
+        rel_bonus_fraction=0.2,
+        odrc_triggered_rel_bonus_fraction=0.6,
+        triggered_max_compensation=0.0,
+    )
+    triggered = GovernanceStateManager(
+        client_states=states, cfg=triggered_cfg
+    )
+    triggered_records = triggered.step(round_id=0, client_signals={1: signal})
+
+    odrc_states = [
+        ClientGovernanceState(client_id=1, gamma=0.5, cost_k=1.0, effort=1),
+    ]
+    odrc_cfg = GovernanceConfig(
+        mechanism="odrc",
+        rel_bonus_fraction=0.2,
+        triggered_max_compensation=0.0,
+    )
+    continuous = GovernanceStateManager(
+        client_states=odrc_states, cfg=odrc_cfg
+    )
+    odrc_records = continuous.step(round_id=0, client_signals={1: signal})
+
+    assert triggered_records[0].payment_now == pytest.approx(0.06)
+    assert triggered_records[0].payment_deferred == pytest.approx(0.24)
+    assert odrc_records[0].payment_now == pytest.approx(0.02)
+    assert odrc_records[0].payment_deferred == pytest.approx(0.08)
+
+
+def test_approx_shapley_allocates_round_budget_to_positive_gain():
+    states = [
+        ClientGovernanceState(client_id=1, gamma=0.5, cost_k=1.0, effort=1),
+        ClientGovernanceState(client_id=2, gamma=0.5, cost_k=1.0, effort=1),
+    ]
+    cfg = GovernanceConfig(
+        mechanism="approx_shapley",
+        approx_shapley_budget=1.0,
+    )
+    manager = GovernanceStateManager(client_states=states, cfg=cfg)
+    records = manager.step(round_id=0, client_signals={1: 0.7, 2: 0.5})
+    by_client = {record.client_id: record for record in records}
+
+    assert by_client[1].payment_now == 1.0
+    assert by_client[2].payment_now == 0.0
+    assert sum(record.payment_now for record in records) == 1.0
+
+
+def test_reputation_only_updates_relationship_without_transfer():
+    states = [
+        ClientGovernanceState(client_id=1, gamma=0.5, cost_k=1.0, effort=1),
+    ]
+    cfg = GovernanceConfig(mechanism="reputation_only")
+    manager = GovernanceStateManager(client_states=states, cfg=cfg)
+    records = manager.step(round_id=0, client_signals={1: 0.8})
+
+    assert records[0].relationship_score > 0.0
+    assert records[0].payment_now == 0.0
+    assert records[0].payment_deferred == 0.0
+    assert records[0].exit_compensation == 0.0
 
 
 def test_summary_exporter_reports_cost_benefit_fields(tmp_path):

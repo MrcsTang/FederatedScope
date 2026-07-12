@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass
 
-from federatedscope.contrib.governance.governance_state import ODRC
+from federatedscope.contrib.governance.governance_state import (
+    ODRC,
+    ODRC_TRIGGERED,
+)
 
 
 def _clip(value, lower, upper):
@@ -24,7 +27,7 @@ class EffortDiagnostics:
 def diagnose_effort_update(state, decision, cfg):
     """Return the next effort and its economic components."""
     odrc_formal_reward = 0.0
-    if cfg.mechanism == ODRC:
+    if cfg.mechanism in (ODRC, ODRC_TRIGGERED):
         odrc_formal_reward = (
             cfg.odrc_exit_compensation_effort_weight *
             decision.exit_compensation

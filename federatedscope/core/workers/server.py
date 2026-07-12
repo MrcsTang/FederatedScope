@@ -241,6 +241,7 @@ class Server(BaseServer):
         self._noise_injector = None
         self.governance_manager = None
         self._governance_eval_metrics = dict()
+        self._governance_no_active_clients = False
 
     @property
     def client_num(self):
@@ -367,6 +368,13 @@ class Server(BaseServer):
                     self.eval()
 
                 if self.state < self.total_round_num:
+                    if self._should_stop_for_no_active_governance_clients():
+                        logger.info(
+                            'Governance stopped training early at round '
+                            '#%d because no active clients remain.',
+                            self.state)
+                        self.terminate(msg_type='finish')
+                        return True
                     # Move to next round of training
                     logger.info(
                         f'----------- Starting a new training round (Round '
@@ -402,8 +410,19 @@ class Server(BaseServer):
 
         active_num = len(self.governance_manager.active_client_ids())
         if active_num <= 0:
-            return min_received_num
+            return 0
         return min(min_received_num, active_num)
+
+    def _should_stop_for_no_active_governance_clients(self):
+        if not is_governance_enabled(self._cfg) or \
+                self.governance_manager is None:
+            return False
+        no_active = len(self.governance_manager.active_client_ids()) == 0
+        if no_active:
+            self._governance_no_active_clients = True
+            export_governance_records(self.governance_manager,
+                                      self._cfg.outdir)
+        return no_active
 
     def check_and_save(self):
         """
@@ -672,6 +691,7 @@ class Server(BaseServer):
         round = max(self.msg_buffer['eval'].keys())
         eval_msg_buffer = self.msg_buffer['eval'][round]
         client_signals = dict()
+        full_eval_signals = dict()
         for client_id, current_metrics in eval_msg_buffer.items():
             if current_metrics is None or \
                     client_id not in self.governance_manager.client_states:
@@ -683,10 +703,23 @@ class Server(BaseServer):
                 self._cfg.governance.signal_metric,
                 self._cfg.governance.signal_scale,
             )
+            if self._cfg.governance.full_eval_interval > 0 and \
+                    round % self._cfg.governance.full_eval_interval == 0:
+                full_metric = self._cfg.governance.full_eval_signal_metric
+                if not full_metric:
+                    full_metric = self._cfg.governance.signal_metric
+                full_eval_signals[client_id] = metric_to_signal(
+                    previous_metrics,
+                    current_metrics,
+                    full_metric,
+                    self._cfg.governance.full_eval_signal_scale,
+                )
             self._governance_eval_metrics[client_id] = current_metrics
 
         if client_signals:
-            self.governance_manager.step(round, client_signals)
+            self.governance_manager.step(
+                round, client_signals, full_eval_signals=full_eval_signals
+            )
             export_governance_records(self.governance_manager,
                                       self._cfg.outdir)
 
@@ -715,19 +748,49 @@ class Server(BaseServer):
                 self.governance_manager is not None and \
                 msg_type == 'model_para' and filter_unseen_clients:
             active_client_ids = set(self.governance_manager.active_client_ids())
-            if active_client_ids:
-                governance_inactive_clients = [
-                    client_id for client_id in range(1, self.client_num + 1)
-                    if client_id not in active_client_ids
-                ]
-                if governance_inactive_clients:
-                    self.sampler.change_state(governance_inactive_clients,
-                                              'unseen')
-                    if governance_sample_client_num > 0:
-                        governance_sample_client_num = min(
-                            governance_sample_client_num,
-                            len(active_client_ids),
-                        )
+            if not active_client_ids:
+                self._governance_no_active_clients = True
+                export_governance_records(self.governance_manager,
+                                          self._cfg.outdir)
+                logger.info(
+                    'Skip model broadcast because no active governance '
+                    'clients remain.')
+                receiver = []
+                self.terminate(msg_type='finish')
+                return
+            trainable_active_client_ids = active_client_ids
+            if filter_unseen_clients:
+                trainable_active_client_ids = \
+                    trainable_active_client_ids.difference(
+                        set(self.unseen_clients_id))
+            if self.sampler is not None and \
+                    hasattr(self.sampler, 'client_state'):
+                idle_client_ids = set(
+                    np.nonzero(self.sampler.client_state)[0].tolist())
+                trainable_active_client_ids = \
+                    trainable_active_client_ids.intersection(idle_client_ids)
+            if governance_sample_client_num > 0 and \
+                    not trainable_active_client_ids:
+                self._governance_no_active_clients = True
+                export_governance_records(self.governance_manager,
+                                          self._cfg.outdir)
+                logger.info(
+                    'Skip model broadcast because no active idle governance '
+                    'clients remain.')
+                self.terminate(msg_type='finish')
+                return
+            governance_inactive_clients = [
+                client_id for client_id in range(1, self.client_num + 1)
+                if client_id not in active_client_ids
+            ]
+            if governance_inactive_clients:
+                self.sampler.change_state(governance_inactive_clients,
+                                          'unseen')
+                if governance_sample_client_num > 0:
+                    governance_sample_client_num = min(
+                        governance_sample_client_num,
+                        len(trainable_active_client_ids),
+                    )
 
         if filter_unseen_clients:
             # to filter out the unseen clients when sampling

@@ -57,6 +57,11 @@ def _assert_mechanism_differences(summaries):
     formal = by_mechanism["formal_safeguard"]
     relational = by_mechanism["relational_contract"]
     odrc = by_mechanism["odrc"]
+    pay_gain = by_mechanism["pay_by_validation_gain"]
+    approx_shapley = by_mechanism["approx_shapley"]
+    reputation = by_mechanism["reputation_only"]
+    formal_insurance = by_mechanism["formal_insurance"]
+    odrc_triggered = by_mechanism["odrc_triggered"]
 
     assert relational["avg_relationship_score"] > spot[
         "avg_relationship_score"
@@ -71,14 +76,26 @@ def _assert_mechanism_differences(summaries):
         "avg_exit_compensation"
     ]
     assert odrc["avg_effort"] >= spot["avg_effort"]
+    assert pay_gain["avg_payment_now"] > spot["avg_payment_now"]
+    assert approx_shapley["avg_payment_now"] > spot["avg_payment_now"]
+    assert reputation["avg_relationship_score"] > spot[
+        "avg_relationship_score"
+    ]
+    assert formal_insurance["formal_trigger_rate"] > spot[
+        "formal_trigger_rate"
+    ]
+    assert odrc_triggered["avg_relationship_score"] > formal_insurance[
+        "avg_relationship_score"
+    ]
 
 
 def _assert_retention_and_welfare(base_client_states, signals):
     cfg = GovernanceConfig(
-        mechanism="odrc",
+        mechanism="spot",
         retention_enabled=True,
         retention_eta=0.5,
         retention_cost_weight=0.2,
+        retention_risk_weight=2.0,
         exit_threshold=0.9,
         min_participation_prob=0.0,
     )

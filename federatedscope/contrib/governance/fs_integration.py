@@ -31,6 +31,9 @@ def build_governance_manager(cfg, client_ids):
         safeguard_strength=cfg.governance.safeguard_strength,
         exit_compensation=cfg.governance.exit_compensation,
         rel_bonus_fraction=cfg.governance.rel_bonus_fraction,
+        odrc_triggered_rel_bonus_fraction=(
+            cfg.governance.odrc_triggered_rel_bonus_fraction
+        ),
         now_fraction=cfg.governance.now_fraction,
         min_effort=cfg.governance.min_effort,
         max_effort=cfg.governance.max_effort,
@@ -57,6 +60,25 @@ def build_governance_manager(cfg, client_ids):
         welfare_signal_weight=cfg.governance.welfare_signal_weight,
         welfare_retention_weight=cfg.governance.welfare_retention_weight,
         welfare_cost_weight=cfg.governance.welfare_cost_weight,
+        proxy_ema_lambda=cfg.governance.proxy_ema_lambda,
+        full_eval_interval=cfg.governance.full_eval_interval,
+        pay_gain_fraction=cfg.governance.pay_gain_fraction,
+        approx_shapley_budget=cfg.governance.approx_shapley_budget,
+        trigger_participation_threshold=(
+            cfg.governance.trigger_participation_threshold
+        ),
+        trigger_relationship_threshold=(
+            cfg.governance.trigger_relationship_threshold
+        ),
+        trigger_signal_threshold=cfg.governance.trigger_signal_threshold,
+        trigger_collapse_active_rate=(
+            cfg.governance.trigger_collapse_active_rate
+        ),
+        formal_budget_cap=cfg.governance.formal_budget_cap,
+        total_budget_cap=cfg.governance.total_budget_cap,
+        triggered_max_compensation=(
+            cfg.governance.triggered_max_compensation
+        ),
     )
     client_states = _build_client_states(cfg, client_ids)
     return GovernanceStateManager(client_states=client_states, cfg=gov_cfg)
@@ -129,6 +151,10 @@ def metric_to_signal(previous_metrics, current_metrics, metric_name, scale):
     current_value = _get_metric(current_metrics, metric_name)
     if previous_value is None or current_value is None:
         return 0.5
+    if "loss" in metric_name:
+        return validation_gain_signal(
+            -previous_value, -current_value, scale=scale
+        )
     return validation_gain_signal(previous_value, current_value, scale=scale)
 
 

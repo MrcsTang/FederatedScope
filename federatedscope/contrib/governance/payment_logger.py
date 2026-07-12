@@ -34,6 +34,10 @@ def summarize_records(records):
             "total_payment_deferred": 0.0,
             "total_exit_compensation": 0.0,
             "total_governance_transfer": 0.0,
+            "formal_trigger_rate": 0.0,
+            "final_formal_budget_used": 0.0,
+            "final_total_budget_used": 0.0,
+            "welfare_gain_per_transfer": 0.0,
             "avg_realized_reward": 0.0,
             "avg_outside_option": 0.0,
             "avg_cost_penalty": 0.0,
@@ -57,6 +61,9 @@ def summarize_records(records):
     )
     total_exit_compensation = sum(
         record.exit_compensation for record in records
+    )
+    total_governance_transfer = (
+        total_payment_now + total_payment_deferred + total_exit_compensation
     )
     total_welfare = sum(record.welfare for record in records)
     total_net_welfare = sum(record.net_welfare for record in records)
@@ -84,9 +91,19 @@ def summarize_records(records):
         "total_payment_now": total_payment_now,
         "total_payment_deferred": total_payment_deferred,
         "total_exit_compensation": total_exit_compensation,
-        "total_governance_transfer": (
-            total_payment_now + total_payment_deferred +
-            total_exit_compensation
+        "total_governance_transfer": total_governance_transfer,
+        "formal_trigger_rate": _mean(
+            1.0 if record.formal_triggered else 0.0 for record in records
+        ),
+        "final_formal_budget_used": max(
+            record.formal_budget_used for record in records
+        ),
+        "final_total_budget_used": max(
+            record.total_budget_used for record in records
+        ),
+        "welfare_gain_per_transfer": (
+            0.0 if total_governance_transfer <= 0
+            else total_net_welfare / total_governance_transfer
         ),
         "avg_realized_reward": _mean(
             record.realized_reward for record in records

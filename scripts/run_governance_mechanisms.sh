@@ -14,6 +14,7 @@ GOV_BASE_PAYMENT="${GOV_BASE_PAYMENT:-0.1}"
 GOV_SAFEGUARD_STRENGTH="${GOV_SAFEGUARD_STRENGTH:-0.4}"
 GOV_EXIT_COMPENSATION="${GOV_EXIT_COMPENSATION:-0.15}"
 GOV_REL_BONUS_FRACTION="${GOV_REL_BONUS_FRACTION:-0.5}"
+GOV_ODRC_TRIGGERED_REL_BONUS_FRACTION="${GOV_ODRC_TRIGGERED_REL_BONUS_FRACTION:--1.0}"
 GOV_EFFORT_ETA="${GOV_EFFORT_ETA:-1.0}"
 GOV_EFFORT_COST_WEIGHT="${GOV_EFFORT_COST_WEIGHT:-0.2}"
 GOV_SIGNAL_SCALE="${GOV_SIGNAL_SCALE:-1.0}"
@@ -30,12 +31,26 @@ GOV_EXIT_THRESHOLD="${GOV_EXIT_THRESHOLD:-0.05}"
 GOV_WELFARE_SIGNAL_WEIGHT="${GOV_WELFARE_SIGNAL_WEIGHT:-1.0}"
 GOV_WELFARE_RETENTION_WEIGHT="${GOV_WELFARE_RETENTION_WEIGHT:-0.2}"
 GOV_WELFARE_COST_WEIGHT="${GOV_WELFARE_COST_WEIGHT:-0.05}"
+GOV_PROXY_EMA_LAMBDA="${GOV_PROXY_EMA_LAMBDA:-0.7}"
+GOV_FULL_EVAL_INTERVAL="${GOV_FULL_EVAL_INTERVAL:-0}"
+GOV_FULL_EVAL_SIGNAL_METRIC="${GOV_FULL_EVAL_SIGNAL_METRIC:-}"
+GOV_FULL_EVAL_SIGNAL_SCALE="${GOV_FULL_EVAL_SIGNAL_SCALE:-1.0}"
+GOV_PAY_GAIN_FRACTION="${GOV_PAY_GAIN_FRACTION:-0.5}"
+GOV_APPROX_SHAPLEY_BUDGET="${GOV_APPROX_SHAPLEY_BUDGET:-0.5}"
+GOV_TRIGGER_PARTICIPATION_THRESHOLD="${GOV_TRIGGER_PARTICIPATION_THRESHOLD:-0.35}"
+GOV_TRIGGER_RELATIONSHIP_THRESHOLD="${GOV_TRIGGER_RELATIONSHIP_THRESHOLD:-0.1}"
+GOV_TRIGGER_SIGNAL_THRESHOLD="${GOV_TRIGGER_SIGNAL_THRESHOLD:-0.35}"
+GOV_TRIGGER_COLLAPSE_ACTIVE_RATE="${GOV_TRIGGER_COLLAPSE_ACTIVE_RATE:-0.7}"
+GOV_FORMAL_BUDGET_CAP="${GOV_FORMAL_BUDGET_CAP:-0.0}"
+GOV_TOTAL_BUDGET_CAP="${GOV_TOTAL_BUDGET_CAP:-0.0}"
+GOV_TRIGGERED_MAX_COMPENSATION="${GOV_TRIGGERED_MAX_COMPENSATION:-1.0}"
 GOV_HETEROGENEITY_ENABLED="${GOV_HETEROGENEITY_ENABLED:-False}"
 GOV_HETEROGENEITY_SEED="${GOV_HETEROGENEITY_SEED:-12345}"
 GOV_GAMMA_LOW="${GOV_GAMMA_LOW:-0.2}"
 GOV_GAMMA_HIGH="${GOV_GAMMA_HIGH:-0.8}"
 GOV_COST_K_LOW="${GOV_COST_K_LOW:-0.8}"
 GOV_COST_K_HIGH="${GOV_COST_K_HIGH:-1.2}"
+GOV_MECHANISMS="${GOV_MECHANISMS:-spot formal_safeguard relational_contract odrc}"
 
 CFG_FILE="${CFG_FILE:-scripts/example_configs/femnist_governance_smoke.yaml}"
 
@@ -57,6 +72,7 @@ Options:
   --gov-safeguard-strength X
   --gov-exit-compensation X
   --gov-rel-bonus-fraction X
+  --gov-odrc-triggered-rel-bonus-fraction X
   --gov-effort-eta X
   --gov-effort-cost-weight X
   --gov-signal-scale X
@@ -73,16 +89,31 @@ Options:
   --gov-welfare-signal-weight X
   --gov-welfare-retention-weight X
   --gov-welfare-cost-weight X
+  --gov-proxy-ema-lambda X
+  --gov-full-eval-interval N
+  --gov-full-eval-signal-metric NAME
+  --gov-full-eval-signal-scale X
+  --gov-pay-gain-fraction X
+  --gov-approx-shapley-budget X
+  --gov-trigger-participation-threshold X
+  --gov-trigger-relationship-threshold X
+  --gov-trigger-signal-threshold X
+  --gov-trigger-collapse-active-rate X
+  --gov-formal-budget-cap X
+  --gov-total-budget-cap X
+  --gov-triggered-max-compensation X
   --gov-heterogeneity-enabled True|False
   --gov-heterogeneity-seed N
   --gov-gamma-low X
   --gov-gamma-high X
   --gov-cost-k-low X
   --gov-cost-k-high X
+  --gov-mechanisms "spot relational_contract odrc_triggered"
   -h, --help
 
 Environment variables with matching uppercase names are still supported.
 Command-line options take precedence over environment variables.
+Use --gov-mechanisms odrc_v2 to run the fixed expanded comparison set.
 EOF
 }
 
@@ -114,6 +145,8 @@ while [[ $# -gt 0 ]]; do
       GOV_EXIT_COMPENSATION="$2"; shift 2 ;;
     --gov-rel-bonus-fraction)
       GOV_REL_BONUS_FRACTION="$2"; shift 2 ;;
+    --gov-odrc-triggered-rel-bonus-fraction)
+      GOV_ODRC_TRIGGERED_REL_BONUS_FRACTION="$2"; shift 2 ;;
     --gov-effort-eta)
       GOV_EFFORT_ETA="$2"; shift 2 ;;
     --gov-effort-cost-weight)
@@ -146,6 +179,32 @@ while [[ $# -gt 0 ]]; do
       GOV_WELFARE_RETENTION_WEIGHT="$2"; shift 2 ;;
     --gov-welfare-cost-weight)
       GOV_WELFARE_COST_WEIGHT="$2"; shift 2 ;;
+    --gov-proxy-ema-lambda)
+      GOV_PROXY_EMA_LAMBDA="$2"; shift 2 ;;
+    --gov-full-eval-interval)
+      GOV_FULL_EVAL_INTERVAL="$2"; shift 2 ;;
+    --gov-full-eval-signal-metric)
+      GOV_FULL_EVAL_SIGNAL_METRIC="$2"; shift 2 ;;
+    --gov-full-eval-signal-scale)
+      GOV_FULL_EVAL_SIGNAL_SCALE="$2"; shift 2 ;;
+    --gov-pay-gain-fraction)
+      GOV_PAY_GAIN_FRACTION="$2"; shift 2 ;;
+    --gov-approx-shapley-budget)
+      GOV_APPROX_SHAPLEY_BUDGET="$2"; shift 2 ;;
+    --gov-trigger-participation-threshold)
+      GOV_TRIGGER_PARTICIPATION_THRESHOLD="$2"; shift 2 ;;
+    --gov-trigger-relationship-threshold)
+      GOV_TRIGGER_RELATIONSHIP_THRESHOLD="$2"; shift 2 ;;
+    --gov-trigger-signal-threshold)
+      GOV_TRIGGER_SIGNAL_THRESHOLD="$2"; shift 2 ;;
+    --gov-trigger-collapse-active-rate)
+      GOV_TRIGGER_COLLAPSE_ACTIVE_RATE="$2"; shift 2 ;;
+    --gov-formal-budget-cap)
+      GOV_FORMAL_BUDGET_CAP="$2"; shift 2 ;;
+    --gov-total-budget-cap)
+      GOV_TOTAL_BUDGET_CAP="$2"; shift 2 ;;
+    --gov-triggered-max-compensation)
+      GOV_TRIGGERED_MAX_COMPENSATION="$2"; shift 2 ;;
     --gov-heterogeneity-enabled)
       GOV_HETEROGENEITY_ENABLED="$2"; shift 2 ;;
     --gov-heterogeneity-seed)
@@ -158,6 +217,8 @@ while [[ $# -gt 0 ]]; do
       GOV_COST_K_LOW="$2"; shift 2 ;;
     --gov-cost-k-high)
       GOV_COST_K_HIGH="$2"; shift 2 ;;
+    --gov-mechanisms)
+      GOV_MECHANISMS="$2"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -193,6 +254,8 @@ run_case() {
     governance.safeguard_strength "${GOV_SAFEGUARD_STRENGTH}" \
     governance.exit_compensation "${GOV_EXIT_COMPENSATION}" \
     governance.rel_bonus_fraction "${GOV_REL_BONUS_FRACTION}" \
+    governance.odrc_triggered_rel_bonus_fraction \
+      "${GOV_ODRC_TRIGGERED_REL_BONUS_FRACTION}" \
     governance.effort_eta "${GOV_EFFORT_ETA}" \
     governance.effort_cost_weight "${GOV_EFFORT_COST_WEIGHT}" \
     governance.signal_scale "${GOV_SIGNAL_SCALE}" \
@@ -213,6 +276,23 @@ run_case() {
     governance.welfare_signal_weight "${GOV_WELFARE_SIGNAL_WEIGHT}" \
     governance.welfare_retention_weight "${GOV_WELFARE_RETENTION_WEIGHT}" \
     governance.welfare_cost_weight "${GOV_WELFARE_COST_WEIGHT}" \
+    governance.proxy_ema_lambda "${GOV_PROXY_EMA_LAMBDA}" \
+    governance.full_eval_interval "${GOV_FULL_EVAL_INTERVAL}" \
+    governance.full_eval_signal_metric "${GOV_FULL_EVAL_SIGNAL_METRIC}" \
+    governance.full_eval_signal_scale "${GOV_FULL_EVAL_SIGNAL_SCALE}" \
+    governance.pay_gain_fraction "${GOV_PAY_GAIN_FRACTION}" \
+    governance.approx_shapley_budget "${GOV_APPROX_SHAPLEY_BUDGET}" \
+    governance.trigger_participation_threshold \
+      "${GOV_TRIGGER_PARTICIPATION_THRESHOLD}" \
+    governance.trigger_relationship_threshold \
+      "${GOV_TRIGGER_RELATIONSHIP_THRESHOLD}" \
+    governance.trigger_signal_threshold "${GOV_TRIGGER_SIGNAL_THRESHOLD}" \
+    governance.trigger_collapse_active_rate \
+      "${GOV_TRIGGER_COLLAPSE_ACTIVE_RATE}" \
+    governance.formal_budget_cap "${GOV_FORMAL_BUDGET_CAP}" \
+    governance.total_budget_cap "${GOV_TOTAL_BUDGET_CAP}" \
+    governance.triggered_max_compensation \
+      "${GOV_TRIGGERED_MAX_COMPENSATION}" \
     governance.heterogeneity_enabled "${GOV_HETEROGENEITY_ENABLED}" \
     governance.heterogeneity_seed "${GOV_HETEROGENEITY_SEED}" \
     governance.gamma_low "${GOV_GAMMA_LOW}" \
@@ -226,7 +306,11 @@ run_case() {
 
 run_case False spot gov_disabled
 
-for mechanism in spot formal_safeguard relational_contract odrc; do
+if [[ "${GOV_MECHANISMS}" == "odrc_v2" ]]; then
+  GOV_MECHANISMS="spot pay_by_validation_gain approx_shapley reputation_only formal_insurance relational_contract odrc odrc_triggered"
+fi
+
+for mechanism in ${GOV_MECHANISMS}; do
   run_case True "${mechanism}" "gov_${mechanism}"
 done
 

@@ -15,6 +15,11 @@ MECHANISM_ORDER = [
     "formal_safeguard",
     "relational_contract",
     "odrc",
+    "pay_by_validation_gain",
+    "approx_shapley",
+    "reputation_only",
+    "formal_insurance",
+    "odrc_triggered",
 ]
 
 
@@ -104,6 +109,10 @@ def _read_records_summary(run_dir):
     total_exit_compensation = sum(
         _to_float(row.get("exit_compensation")) for row in records
     )
+    total_governance_transfer = (
+        total_payment_now + total_payment_deferred +
+        total_exit_compensation
+    )
     total_welfare = sum(_to_float(row.get("welfare")) for row in records)
     total_net_welfare = sum(
         _to_float(row.get("net_welfare")) for row in records
@@ -115,9 +124,20 @@ def _read_records_summary(run_dir):
         "total_payment_now": total_payment_now,
         "total_payment_deferred": total_payment_deferred,
         "total_exit_compensation": total_exit_compensation,
-        "total_governance_transfer": (
-            total_payment_now + total_payment_deferred +
-            total_exit_compensation
+        "total_governance_transfer": total_governance_transfer,
+        "formal_trigger_rate": sum(
+            1.0 if str(row.get("formal_triggered", "")).lower() == "true"
+            else 0.0 for row in records
+        ) / n_records,
+        "final_formal_budget_used": max(
+            _to_float(row.get("formal_budget_used")) for row in records
+        ),
+        "final_total_budget_used": max(
+            _to_float(row.get("total_budget_used")) for row in records
+        ),
+        "welfare_gain_per_transfer": (
+            0.0 if total_governance_transfer <= 0
+            else total_net_welfare / total_governance_transfer
         ),
         "avg_payment_now": total_payment_now / n_records,
         "avg_payment_deferred": total_payment_deferred / n_records,
@@ -223,6 +243,22 @@ def build_rows(exp_root, sub_exp_prefix=None):
             "total_governance_transfer": governance.get(
                 "total_governance_transfer",
                 records.get("total_governance_transfer", ""),
+            ),
+            "formal_trigger_rate": governance.get(
+                "formal_trigger_rate",
+                records.get("formal_trigger_rate", ""),
+            ),
+            "final_formal_budget_used": governance.get(
+                "final_formal_budget_used",
+                records.get("final_formal_budget_used", ""),
+            ),
+            "final_total_budget_used": governance.get(
+                "final_total_budget_used",
+                records.get("final_total_budget_used", ""),
+            ),
+            "welfare_gain_per_transfer": governance.get(
+                "welfare_gain_per_transfer",
+                records.get("welfare_gain_per_transfer", ""),
             ),
             "avg_realized_reward": governance.get("avg_realized_reward", ""),
             "avg_outside_option": governance.get("avg_outside_option", ""),
@@ -336,7 +372,9 @@ def print_markdown(rows):
         "avg_payment_now",
         "avg_payment_deferred",
         "avg_exit_compensation",
+        "formal_trigger_rate",
         "total_governance_transfer",
+        "welfare_gain_per_transfer",
         "effort_distribution",
     ]
     print("| " + " | ".join(columns) + " |")

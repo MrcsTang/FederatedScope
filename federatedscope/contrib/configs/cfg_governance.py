@@ -13,6 +13,7 @@ def extend_governance_cfg(cfg):
     cfg.governance.safeguard_strength = 0.4
     cfg.governance.exit_compensation = 0.15
     cfg.governance.rel_bonus_fraction = 0.5
+    cfg.governance.odrc_triggered_rel_bonus_fraction = -1.0
     cfg.governance.now_fraction = 0.2
     cfg.governance.min_effort = 1
     cfg.governance.max_effort = 5
@@ -31,6 +32,17 @@ def extend_governance_cfg(cfg):
     cfg.governance.welfare_signal_weight = 1.0
     cfg.governance.welfare_retention_weight = 0.2
     cfg.governance.welfare_cost_weight = 0.05
+    cfg.governance.proxy_ema_lambda = 0.7
+    cfg.governance.full_eval_interval = 0
+    cfg.governance.pay_gain_fraction = 0.5
+    cfg.governance.approx_shapley_budget = 0.5
+    cfg.governance.trigger_participation_threshold = 0.35
+    cfg.governance.trigger_relationship_threshold = 0.1
+    cfg.governance.trigger_signal_threshold = 0.35
+    cfg.governance.trigger_collapse_active_rate = 0.7
+    cfg.governance.formal_budget_cap = 0.0
+    cfg.governance.total_budget_cap = 0.0
+    cfg.governance.triggered_max_compensation = 1.0
     cfg.governance.heterogeneity_enabled = False
     cfg.governance.heterogeneity_seed = 12345
     cfg.governance.gamma_low = 0.2
@@ -41,17 +53,23 @@ def extend_governance_cfg(cfg):
     cfg.governance.cost_k = 1.0
     cfg.governance.signal_metric = 'val_acc'
     cfg.governance.signal_scale = 1.0
+    cfg.governance.full_eval_signal_metric = ''
+    cfg.governance.full_eval_signal_scale = 1.0
 
     cfg.register_cfg_check_fun(assert_governance_cfg)
 
 
 def assert_governance_cfg(cfg):
     if cfg.governance.mechanism not in [
-            'spot', 'formal_safeguard', 'relational_contract', 'odrc'
+            'spot', 'formal_safeguard', 'relational_contract', 'odrc',
+            'pay_by_validation_gain', 'approx_shapley', 'reputation_only',
+            'formal_insurance', 'odrc_triggered'
     ]:
         raise ValueError(
             "cfg.governance.mechanism must be one of "
-            "['spot', 'formal_safeguard', 'relational_contract', 'odrc']")
+            "['spot', 'formal_safeguard', 'relational_contract', 'odrc', "
+            "'pay_by_validation_gain', 'approx_shapley', "
+            "'reputation_only', 'formal_insurance', 'odrc_triggered']")
     if cfg.governance.min_effort <= 0:
         raise ValueError("cfg.governance.min_effort must be positive")
     if cfg.governance.max_effort < cfg.governance.min_effort:
@@ -61,6 +79,11 @@ def assert_governance_cfg(cfg):
         raise ValueError(
             "cfg.governance.odrc_exit_compensation_effort_weight must be "
             "non-negative")
+    if (cfg.governance.odrc_triggered_rel_bonus_fraction < 0 and
+            cfg.governance.odrc_triggered_rel_bonus_fraction != -1.0):
+        raise ValueError(
+            "cfg.governance.odrc_triggered_rel_bonus_fraction must be "
+            "non-negative or -1 to use rel_bonus_fraction")
     if cfg.governance.retention_eta < 0:
         raise ValueError("cfg.governance.retention_eta must be non-negative")
     if cfg.governance.retention_cost_weight < 0:
@@ -89,6 +112,40 @@ def assert_governance_cfg(cfg):
     if cfg.governance.welfare_cost_weight < 0:
         raise ValueError(
             "cfg.governance.welfare_cost_weight must be non-negative")
+    if not 0 <= cfg.governance.proxy_ema_lambda <= 1:
+        raise ValueError("cfg.governance.proxy_ema_lambda must be in [0, 1]")
+    if cfg.governance.full_eval_interval < 0:
+        raise ValueError(
+            "cfg.governance.full_eval_interval must be non-negative")
+    if cfg.governance.pay_gain_fraction < 0:
+        raise ValueError(
+            "cfg.governance.pay_gain_fraction must be non-negative")
+    if cfg.governance.approx_shapley_budget < 0:
+        raise ValueError(
+            "cfg.governance.approx_shapley_budget must be non-negative")
+    if not 0 <= cfg.governance.trigger_participation_threshold <= 1:
+        raise ValueError(
+            "cfg.governance.trigger_participation_threshold must be in [0, 1]"
+        )
+    if cfg.governance.trigger_relationship_threshold < 0:
+        raise ValueError(
+            "cfg.governance.trigger_relationship_threshold must be "
+            "non-negative")
+    if not 0 <= cfg.governance.trigger_signal_threshold <= 1:
+        raise ValueError(
+            "cfg.governance.trigger_signal_threshold must be in [0, 1]")
+    if not 0 <= cfg.governance.trigger_collapse_active_rate <= 1:
+        raise ValueError(
+            "cfg.governance.trigger_collapse_active_rate must be in [0, 1]")
+    if cfg.governance.formal_budget_cap < 0:
+        raise ValueError(
+            "cfg.governance.formal_budget_cap must be non-negative")
+    if cfg.governance.total_budget_cap < 0:
+        raise ValueError(
+            "cfg.governance.total_budget_cap must be non-negative")
+    if cfg.governance.triggered_max_compensation < 0:
+        raise ValueError(
+            "cfg.governance.triggered_max_compensation must be non-negative")
     if cfg.governance.gamma_low > cfg.governance.gamma_high:
         raise ValueError(
             "cfg.governance.gamma_low must be no larger than gamma_high")
